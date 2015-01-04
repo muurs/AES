@@ -1,6 +1,8 @@
 #include <iostream>
+#include "aes.hpp"
 
 int main()
 {
-    std::cout << "Hello World\n";
+    test();
 }
+
