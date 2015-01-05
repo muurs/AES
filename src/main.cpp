@@ -3,6 +3,7 @@
 
 int main()
 {
-    testA1();
+    test_cipher();
 }
+
 

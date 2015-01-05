@@ -2,6 +2,8 @@
 #ifndef UTILITY_HPP
 #define UTILITY_HPP
 
+#include <algorithm>
+#include <array>
 #include <ostream>
 
 /*
@@ -36,8 +38,27 @@ Word operator^(const Word &lhs, const Word &rhs);
  */
 std::ostream &operator<<(std::ostream &os, const Word &w);
 
+class Block
+{
+public:
+    Block()
+    { }
 
+    Block(const std::array<unsigned char, 16> &b)
+        : block(b)
+    { } 
 
-void test();
+    template <typename ForwardIter>
+    Block(ForwardIter beg, ForwardIter end)
+    {
+        std::copy(beg, end, block.begin());
+    }
 
+    unsigned char &operator()(size_t i, size_t j) { return block[4*j + i]; }
+    const unsigned char &operator()(size_t i, size_t j) const { return block[4*j + i]; } 
+private:
+    std::array<unsigned char, 16> block;
+};
+
+std::ostream &operator<<(std::ostream &os, const Block &b);
 #endif

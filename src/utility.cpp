@@ -45,3 +45,16 @@ std::ostream &operator<<(std::ostream &os, const Word &w)
 }
 
 
+std::ostream &operator<<(std::ostream &os, const Block &b)
+{
+    os << std::hex;
+    for ( size_t i = 0; i < 4; ++i )
+    {
+        for ( size_t j = 0; j < 4; ++j )
+        {
+            os << (unsigned )b(i,j) << " ";
+        }
+        os << "\n";
+    }
+    return os << std::dec;
+}

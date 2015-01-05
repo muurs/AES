@@ -1,3 +1,4 @@
+#include <array>
 #include <cassert>
 #include <iostream>
 #include <vector>
@@ -5,6 +6,23 @@
 #include "utility.hpp"
 
 using std::cout;
+
+void print(const std::array<unsigned char, 16> &arr)
+{
+    cout << std::hex;
+    for ( size_t i = 0; i < 4; ++i )
+    {
+        for ( size_t j = 0; j < 4; ++j )
+        {
+            unsigned x = arr[4*i + j];
+            if ( x <= 0xf )
+                cout << "0";
+            cout << x << " ";
+        }
+        cout << "\n";
+    }
+    cout << std::dec;
+}
 
 // AES S-Box (see Figure 7, FIPS 197)
 static const unsigned char s[16][16] = 
@@ -26,6 +44,26 @@ static const unsigned char s[16][16] =
    {0xE1, 0xF8, 0x98, 0x11, 0x69, 0xD9, 0x8E, 0x94, 0x9B, 0x1E, 0x87, 0xE9, 0xCE, 0x55, 0x28, 0xDF},
    {0x8C, 0xA1, 0x89, 0x0D, 0xBF, 0xE6, 0x42, 0x68, 0x41, 0x99, 0x2D, 0x0F, 0xB0, 0x54, 0xBB, 0x16}
 };
+
+template <typename ForwardIter>
+void add_round_key(Block &state, ForwardIter beg)
+{
+}
+
+
+std::array<unsigned char, 16> aes_cipher(const std::array<unsigned char, 16> &in, const std::vector<Word> &ww, unsigned Nb)
+{
+    std::vector<unsigned char> w;
+    for ( const auto word : ww )
+        for ( size_t i = 0; i < 4; ++i )
+            w.push_back(word[i]);
+
+    Block state(in);
+    Block round_key(w.begin(), w.end() + Nb);
+
+    cout << round_key << "\n";
+    return {}; // todo: fix this
+}
 
 /*
  * Implemention of RotWord() (see Section 5.2, FIPS 197)
@@ -98,6 +136,18 @@ static std::vector<Word> key_expansion(const std::vector<unsigned char> &k, unsi
     return w;
 }
 
+void test_cipher()
+{
+    std::array<unsigned char, 16> input { 0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d, 0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34 };
+    std::vector<unsigned char> key { 0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c };
+
+    const unsigned Nb = 4;
+    const unsigned Nk = 4;
+    const unsigned Nr = 10;
+    auto key_expanded = key_expansion(key, Nb, Nk, Nr);
+
+    aes_cipher(input, key_expanded, Nb);
+}
 
 void testA1() 
 {
