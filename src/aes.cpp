@@ -1,24 +1,12 @@
 #include <cassert>
 #include <iostream>
+#include <vector>
 #include "aes.hpp"
-
-#define XTIME(x) ( ( x << 1 ) ^ ( ( x & 0x80 ) ? 0x1B : 0x00 ) )
+#include "utility.hpp"
 
 using std::cout;
 
-Word operator^(const Word &lhs, const Word &rhs)
-{
-    return Word(lhs.b3 ^ rhs.b3, lhs.b2 ^ rhs.b2 , lhs.b1 ^ rhs.b1, lhs.b0 ^ rhs.b0);
-}
-
-std::ostream &operator<<(std::ostream &os, const Word &w)
-{
-    os << std::hex;
-    os << ((unsigned) w.b3) << ' ' << ((unsigned) w.b2) << ' ' << ((unsigned) w.b1) << ' ' << ((unsigned) w.b0);
-    return os << std::dec;
-}
-
-
+// AES S-Box (see Figure 7, FIPS 197)
 static const unsigned char s[16][16] = 
 {
    {0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76},
@@ -40,45 +28,41 @@ static const unsigned char s[16][16] =
 };
 
 /*
- * FIPS 197: RotWord(), page 19 (23 in pdf)
+ * Implemention of RotWord() (see Section 5.2, FIPS 197)
  */
-Word rot_word(const Word &w)
+static Word rot_word(const Word &w)
 {
-    return Word (w.b2, w.b1, w.b0, w.b3);
+    return { w.b2, w.b1, w.b0, w.b3 };
 }
 
 /*
- * FIPS 197: xtime(), page 11 (15 in pdf)
+ * Implementation of xtime() (see Section 4.2.1, FIPS 197)
  */
-unsigned char xtime(unsigned char x)
+static unsigned char xtime(unsigned char x)
 {
     return (x << 1) ^ ((x & 0x80) ? 0x1B : 0x00);
 }
 
-Word sub_word(const Word &w)
+/*
+ * Implements SubWord() (see Section 5.1.1 and Fig. 7, FIPS 197)
+ */
+static Word sub_word(const Word &w)
 {
     Word res;
-
-    unsigned r = w.b3 >> 4;
-    unsigned c = w.b3 & 0x0f;
-    res.b3 = s[r][c];
-
-    r = w.b2 >> 4;
-    c = w.b2 & 0x0f;
-    res.b2 = s[r][c];
-
-    r = w.b1 >> 4;
-    c = w.b1 & 0x0f;
-    res.b1 = s[r][c];
-
-    r = w.b0 >> 4;
-    c = w.b0 & 0x0f;
-    res.b0 = s[r][c];
+    for ( size_t i = 0; i < 4; ++i )
+    {
+        unsigned r = w[i] >> 4;
+        unsigned c = w[i] & 0x0f;
+        res[i] = s[r][c];
+    }
 
     return res;   
 }
 
-Word round_con(unsigned i)
+/*
+ * Computes Rcon[i] (see Section 5.2, FIPS 197)
+ */
+static Word round_con(unsigned i)
 {
     Word rcon(1, 0, 0, 0);
     for ( size_t k = 0; k < i; ++k )
@@ -87,53 +71,35 @@ Word round_con(unsigned i)
     return rcon;
 }
 
-
-std::vector<Word> key_expansion(const std::vector<unsigned char> &k, unsigned Nb, unsigned Nk, unsigned Nr)
+/*
+ * Implements Key Expansion (see Section 5.2 and Figure 11, FIPS 197)
+ */
+static std::vector<Word> key_expansion(const std::vector<unsigned char> &k, unsigned Nb, unsigned Nk, unsigned Nr)
 {
     std::vector<Word> w(Nb * (Nr + 1));
 
     unsigned i = 0;
     for ( i = 0; i < Nk; ++i )
-        w[i] = Word(k[4*i], k[4*i+1], k[4*i+2], k[4*i+3] );
+        w[i] = Word( k[4*i], k[4*i+1], k[4*i+2], k[4*i+3] );
 
     Word rcon(1, 0, 0, 0);
     for ( ; i < Nb * (Nr + 1); ++i )
     {
-        //cout << std::dec << "i = " << i << "\n";
         Word tmp = w[i-1];    
-        //cout << std::hex;
-        //cout << "tmp: " << tmp << "\n";
         if ( i % Nk == 0 )
-        {
-            //cout << std::hex;
-            //auto tmp1 = rot_word(tmp);
-            //cout << "After RotWord(); " << tmp1 << "\n"; 
-            //auto tmp2 = sub_word(tmp1);
-            //cout << "After SubWord(): " << tmp2 << "\n";
-            //auto tmp3 = tmp2 ^ rcon;
-            //cout << "Rcon[i/Nk] = " << rcon << "\n";
-            //cout << "After XOR: " << tmp3 << "\n";
             tmp = sub_word(rot_word(tmp)) ^ rcon; 
-        }
         else if ( Nk > 6 && i % Nk == 4 )
-        {
             tmp = sub_word(tmp);
-        }
 
-        //cout << "w[i-Nk]: " << w[i-Nk] << "\n";
         w[i] = w[i-Nk] ^ tmp;
-       // cout << "w[i]: " << w[i] << "\n";
-
         rcon = round_con(i / Nk);
     }
 
-
-    assert( w.size() == Nb * (Nr + 1) );
     return w;
 }
 
 
-void test()
+void testA1() 
 {
     const std::vector<unsigned char> k { 0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88,
                                          0x09, 0xcf, 0x4f, 0x3c };
@@ -142,7 +108,32 @@ void test()
     const unsigned Nr = 10;
 
     auto k_exp = key_expansion(k, Nb, Nk, Nr);
-    for ( size_t i = 0; i < k_exp.size(); ++i ) 
-        cout << i << ": " << k_exp[i] << "\n"; 
-    cout << "\n";
+    for ( auto w : k_exp )
+        cout << w << "\n";
+}
+
+void testA2()
+{
+    const std::vector<unsigned char> k { 0x8e, 0x73, 0xb0, 0xf7, 0xda, 0x0e, 0x64, 0x52, 0xc8, 0x10, 0xf3, 0x2b,
+                                         0x80, 0x90, 0x79, 0xe5, 0x62, 0xf8, 0xea, 0xd2, 0x52, 0x2c, 0x6b, 0x7b };
+    const unsigned Nb = 4;
+    const unsigned Nk = 6;
+    const unsigned Nr = 12;
+
+    auto k_exp = key_expansion(k, Nb, Nk, Nr);
+    for ( auto w : k_exp )
+        cout << w << "\n"; 
+}
+
+void testA3()
+{
+    const std::vector<unsigned char> k { 0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe, 0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
+                                         0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7, 0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4};    
+    const unsigned Nb = 4;
+    const unsigned Nk = 8; 
+    const unsigned Nr = 14;
+
+    auto k_exp = key_expansion(k, Nb, Nk, Nr);
+    for ( auto w : k_exp )
+        cout << w << "\n"; 
 }
