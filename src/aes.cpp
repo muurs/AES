@@ -45,32 +45,44 @@ static const unsigned char s[16][16] =
    {0x8C, 0xA1, 0x89, 0x0D, 0xBF, 0xE6, 0x42, 0x68, 0x41, 0x99, 0x2D, 0x0F, 0xB0, 0x54, 0xBB, 0x16}
 };
 
-template <typename ForwardIter>
-void add_round_key(Block &state, ForwardIter beg)
+void add_round_key(Block &state, const Block &rk)
 {
+    for ( size_t i = 0; i < 4; ++i )
+    {
+        for ( size_t j = 0; j < 4; ++j )
+        {
+            state(i,j) = state(i,j) ^ rk(i,j); 
+        }
+    }
 }
 
 
-std::array<unsigned char, 16> aes_cipher(const std::array<unsigned char, 16> &in, const std::vector<Word> &ww, unsigned Nb)
+template <typename RandIter>
+Block to_block(RandIter beg, RandIter end)
 {
-    std::vector<unsigned char> w;
-    for ( const auto word : ww )
-        for ( size_t i = 0; i < 4; ++i )
-            w.push_back(word[i]);
+    Block b;
+    for ( size_t i = 0; i < 4; ++i )
+    {
+       for ( size_t j = 0; j < 4; ++j )
+       {
+            b(j,i) = beg[i][3-j];
+       } 
+    }
 
-    Block state(in);
-    Block round_key(w.begin(), w.end() + Nb);
-
-    cout << round_key << "\n";
-    return {}; // todo: fix this
+    return b;
 }
 
-/*
- * Implemention of RotWord() (see Section 5.2, FIPS 197)
- */
-static Word rot_word(const Word &w)
+void sub_bytes(Block &state)
 {
-    return { w.b2, w.b1, w.b0, w.b3 };
+    for ( size_t i = 0; i < 4; ++i )
+    {
+        for ( size_t j = 0; j < 4; ++j )
+        {
+            unsigned r = state(i,j) >> 4;
+            unsigned c = state(i,j) & 0x0f;
+            state(i,j) = s[r][c];
+        }
+    }
 }
 
 /*
@@ -79,6 +91,88 @@ static Word rot_word(const Word &w)
 static unsigned char xtime(unsigned char x)
 {
     return (x << 1) ^ ((x & 0x80) ? 0x1B : 0x00);
+}
+
+
+
+void shift_rows(Block &state)
+{
+    unsigned char tmp;
+    
+    // Shift row 1
+    tmp = state(1,0);
+    state(1, 0) = state(1, 1);
+    state(1, 1) = state(1, 2);
+    state(1, 2) = state(1, 3);
+    state(1, 3) = tmp;
+
+    // Shift row 2
+    // todo: fix error here
+    tmp = state(2, 0);
+    state(2, 0) = state(2, 2);
+    state(2, 2) = tmp;
+    tmp = state(2, 1);
+    state(2, 1) = state(2, 3);
+    state(2, 3) = tmp;
+
+    // Shift row 3
+    tmp = state(3, 3);
+    state(3, 3) = state(3, 2);
+    state(3, 2) = state(3, 1);
+    state(3, 1) = state(3, 0);
+    state(3, 0) = tmp;
+}
+
+void mix_columns(Block &state)
+{
+    Block ss(state);
+    for ( unsigned c = 0; c < 4; ++c )
+    {
+        state(0, c) = xtime(ss(0,c)) ^ ss(1,c) ^ xtime(ss(1,c)) ^ ss(2,c) ^ ss(3,c);
+        state(1, c) = ss(0,c) ^ xtime(ss(1,c)) ^ ss(2,c) ^ xtime(ss(2,c)) ^ ss(3,c);
+        state(2, c) = ss(0,c) ^ ss(1,c) ^ xtime(ss(2,c)) ^ ss(3,c) ^ xtime(ss(3,c));
+        state(3, c) = ss(0,c) ^ xtime(ss(0,c)) ^ ss(1,c) ^ ss(2,c) ^ xtime(ss(3,c));
+    }
+}
+
+std::array<unsigned char, 16> aes_cipher(const std::array<unsigned char, 16> &in, const std::vector<Word> &w, unsigned Nb,
+                                         unsigned Nr)
+{
+    Block state(in);
+    Block round_key = to_block(w.cbegin(), w.cbegin() + Nb);
+
+    add_round_key(state, round_key);
+
+    for ( unsigned round = 1; round < Nr; ++round )
+    {
+       sub_bytes(state);
+       shift_rows(state);
+       mix_columns(state);
+       round_key = to_block(w.cbegin() + round * Nb, w.cbegin() + (round + 1) * Nb);
+       add_round_key(state, round_key);
+    }
+
+    sub_bytes(state);
+    shift_rows(state);
+    round_key = to_block(w.cbegin() + Nr * Nb, w.cbegin() + (Nr+1) * Nb);
+    add_round_key(state, round_key);
+
+    cout << "\nOutput:\n";
+    cout << state << "\n";
+
+    std::array<unsigned char, 16> output; 
+    for ( size_t i = 0; i < 4; ++i )
+        for ( size_t j = 0; j < 4; ++j )
+            output[4*j + i] = state(i,j);
+    return output;
+}
+
+/*
+ * Implemention of RotWord() (see Section 5.2, FIPS 197)
+ */
+static Word rot_word(const Word &w)
+{
+    return { w.b2, w.b1, w.b0, w.b3 };
 }
 
 /*
@@ -136,6 +230,21 @@ static std::vector<Word> key_expansion(const std::vector<unsigned char> &k, unsi
     return w;
 }
 
+std::array<unsigned char, 16> aes_encrypt_block(const std::array<unsigned char, 16> &input, const std::vector<unsigned char> &key, unsigned Nk)
+{
+    unsigned Nr;
+    if ( Nk == 4 )
+        Nr = 10;
+    else if ( Nk == 6 )
+        Nr = 12;
+    else
+        Nr = 14;
+
+    const unsigned Nb = 4;
+    auto key_expanded = key_expansion(key, Nb, Nk, Nr);
+    return aes_cipher(input, key_expanded, Nb, Nr); 
+}
+
 void test_cipher()
 {
     std::array<unsigned char, 16> input { 0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d, 0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34 };
@@ -146,7 +255,16 @@ void test_cipher()
     const unsigned Nr = 10;
     auto key_expanded = key_expansion(key, Nb, Nk, Nr);
 
-    aes_cipher(input, key_expanded, Nb);
+    std::array<unsigned char, 16> output = aes_cipher(input, key_expanded, Nb, Nr);
+    cout << std::hex;
+    for ( auto i : output )
+        cout << (unsigned) i << " ";
+    cout << std::dec << "\n";
+}
+
+void testC1()
+{
+
 }
 
 void testA1() 

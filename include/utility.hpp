@@ -48,12 +48,6 @@ public:
         : block(b)
     { } 
 
-    template <typename ForwardIter>
-    Block(ForwardIter beg, ForwardIter end)
-    {
-        std::copy(beg, end, block.begin());
-    }
-
     unsigned char &operator()(size_t i, size_t j) { return block[4*j + i]; }
     const unsigned char &operator()(size_t i, size_t j) const { return block[4*j + i]; } 
 private:

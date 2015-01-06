@@ -52,6 +52,8 @@ std::ostream &operator<<(std::ostream &os, const Block &b)
     {
         for ( size_t j = 0; j < 4; ++j )
         {
+            if ( b(i,j) <= 0xf )
+                os << "0";
             os << (unsigned )b(i,j) << " ";
         }
         os << "\n";
