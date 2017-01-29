@@ -7,6 +7,7 @@ using std::cout;
 
 int main()
 { 
+    testB();
 }
 
 

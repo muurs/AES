@@ -7,23 +7,6 @@
 
 using std::cout;
 
-void print(const std::array<unsigned char, 16> &arr)
-{
-    cout << std::hex;
-    for ( size_t i = 0; i < 4; ++i )
-    {
-        for ( size_t j = 0; j < 4; ++j )
-        {
-            unsigned x = arr[4*i + j];
-            if ( x <= 0xf )
-                cout << "0";
-            cout << x << " ";
-        }
-        cout << "\n";
-    }
-    cout << std::dec;
-}
-
 // AES S-Box (see Figure 7, FIPS 197)
 static const unsigned char s[16][16] = 
 {
@@ -45,33 +28,33 @@ static const unsigned char s[16][16] =
    {0x8C, 0xA1, 0x89, 0x0D, 0xBF, 0xE6, 0x42, 0x68, 0x41, 0x99, 0x2D, 0x0F, 0xB0, 0x54, 0xBB, 0x16}
 };
 
+/*
+ * Implements AddRoundKey() (see Section 5.1.4, FIPS 197)
+ */
 void add_round_key(Block &state, const Block &rk)
 {
     for ( size_t i = 0; i < 4; ++i )
-    {
         for ( size_t j = 0; j < 4; ++j )
-        {
             state(i,j) = state(i,j) ^ rk(i,j); 
-        }
-    }
 }
 
-
+/*
+ * This function converts a subrange of the expansion key into block form.
+ */
 template <typename RandIter>
 Block to_block(RandIter beg, RandIter end)
 {
     Block b;
     for ( size_t i = 0; i < 4; ++i )
-    {
        for ( size_t j = 0; j < 4; ++j )
-       {
             b(j,i) = beg[i][3-j];
-       } 
-    }
 
     return b;
 }
 
+/*
+ * Implements SubBytes() (see Section 5.1.1, FIPS 197)
+ */
 void sub_bytes(Block &state)
 {
     for ( size_t i = 0; i < 4; ++i )
@@ -94,7 +77,9 @@ static unsigned char xtime(unsigned char x)
 }
 
 
-
+/*
+ * Implements ShitRows() (see Section 5.1.2, FIPS 197) 
+ */
 void shift_rows(Block &state)
 {
     unsigned char tmp;
@@ -107,7 +92,6 @@ void shift_rows(Block &state)
     state(1, 3) = tmp;
 
     // Shift row 2
-    // todo: fix error here
     tmp = state(2, 0);
     state(2, 0) = state(2, 2);
     state(2, 2) = tmp;
@@ -123,6 +107,9 @@ void shift_rows(Block &state)
     state(3, 0) = tmp;
 }
 
+/*
+ * Implements MixColumns() (see Section 5.1.3, FIPS 197)
+ */
 void mix_columns(Block &state)
 {
     Block ss(state);
@@ -135,6 +122,9 @@ void mix_columns(Block &state)
     }
 }
 
+/*
+ * Encrypts an input block <in> (of Nb bytes) under the expanded cipher key <w>. Nb and Nr as described in Section 2.2, FIPS 197)
+ */
 std::array<unsigned char, 16> aes_cipher(const std::array<unsigned char, 16> &in, const std::vector<Word> &w, unsigned Nb,
                                          unsigned Nr)
 {
@@ -157,9 +147,6 @@ std::array<unsigned char, 16> aes_cipher(const std::array<unsigned char, 16> &in
     round_key = to_block(w.cbegin() + Nr * Nb, w.cbegin() + (Nr+1) * Nb);
     add_round_key(state, round_key);
 
-    cout << "\nOutput:\n";
-    cout << state << "\n";
-
     std::array<unsigned char, 16> output; 
     for ( size_t i = 0; i < 4; ++i )
         for ( size_t j = 0; j < 4; ++j )
@@ -169,6 +156,9 @@ std::array<unsigned char, 16> aes_cipher(const std::array<unsigned char, 16> &in
 
 /*
  * Implemention of RotWord() (see Section 5.2, FIPS 197)
+ *
+ * Note that the implementation slighlty deviates from the specification in FIPS 197
+ * since Word has a different internal byte order than specifided. 
  */
 static Word rot_word(const Word &w)
 {
@@ -206,7 +196,7 @@ static Word round_con(unsigned i)
 /*
  * Implements Key Expansion (see Section 5.2 and Figure 11, FIPS 197)
  */
-static std::vector<Word> key_expansion(const std::vector<unsigned char> &k, unsigned Nb, unsigned Nk, unsigned Nr)
+static std::vector<Word> expand_key(const std::vector<unsigned char> &k, unsigned Nb, unsigned Nk, unsigned Nr)
 {
     std::vector<Word> w(Nb * (Nr + 1));
 
@@ -230,22 +220,16 @@ static std::vector<Word> key_expansion(const std::vector<unsigned char> &k, unsi
     return w;
 }
 
-std::array<unsigned char, 16> aes_encrypt_block(const std::array<unsigned char, 16> &input, const std::vector<unsigned char> &key, unsigned Nk)
-{
-    unsigned Nr;
-    if ( Nk == 4 )
-        Nr = 10;
-    else if ( Nk == 6 )
-        Nr = 12;
-    else
-        Nr = 14;
+/***********************************************************
+ ***********************************************************
+    Some test functions of appendix A, B and C, FIPS 197. 
+ ***********************************************************
+ ***********************************************************/
 
-    const unsigned Nb = 4;
-    auto key_expanded = key_expansion(key, Nb, Nk, Nr);
-    return aes_cipher(input, key_expanded, Nb, Nr); 
-}
-
-void test_cipher()
+/*
+ * This function tests the example in Appendix B, FIPS 197.
+ */
+void testB()
 {
     std::array<unsigned char, 16> input { 0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d, 0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34 };
     std::vector<unsigned char> key { 0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c };
@@ -253,7 +237,7 @@ void test_cipher()
     const unsigned Nb = 4;
     const unsigned Nk = 4;
     const unsigned Nr = 10;
-    auto key_expanded = key_expansion(key, Nb, Nk, Nr);
+    auto key_expanded = expand_key(key, Nb, Nk, Nr);
 
     std::array<unsigned char, 16> output = aes_cipher(input, key_expanded, Nb, Nr);
     cout << std::hex;
@@ -262,11 +246,9 @@ void test_cipher()
     cout << std::dec << "\n";
 }
 
-void testC1()
-{
-
-}
-
+/*
+ * This function tests the example in Appendix A.1, FIPS 197
+ */
 void testA1() 
 {
     const std::vector<unsigned char> k { 0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88,
@@ -275,11 +257,14 @@ void testA1()
     const unsigned Nk = 4;
     const unsigned Nr = 10;
 
-    auto k_exp = key_expansion(k, Nb, Nk, Nr);
+    auto k_exp = expand_key(k, Nb, Nk, Nr);
     for ( auto w : k_exp )
         cout << w << "\n";
 }
 
+/*
+ * This function tests the example in Appendix A.2, FIPS 197
+ */
 void testA2()
 {
     const std::vector<unsigned char> k { 0x8e, 0x73, 0xb0, 0xf7, 0xda, 0x0e, 0x64, 0x52, 0xc8, 0x10, 0xf3, 0x2b,
@@ -288,11 +273,14 @@ void testA2()
     const unsigned Nk = 6;
     const unsigned Nr = 12;
 
-    auto k_exp = key_expansion(k, Nb, Nk, Nr);
+    auto k_exp = expand_key(k, Nb, Nk, Nr);
     for ( auto w : k_exp )
         cout << w << "\n"; 
 }
 
+/*
+ * This function tests the example in Appendix A.3, FIPS 197
+ */
 void testA3()
 {
     const std::vector<unsigned char> k { 0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe, 0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
@@ -301,7 +289,7 @@ void testA3()
     const unsigned Nk = 8; 
     const unsigned Nr = 14;
 
-    auto k_exp = key_expansion(k, Nb, Nk, Nr);
+    auto k_exp = expand_key(k, Nb, Nk, Nr);
     for ( auto w : k_exp )
         cout << w << "\n"; 
 }

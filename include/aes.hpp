@@ -6,11 +6,10 @@
 
 std::array<unsigned char, 16> aes_encrypt_block(const std::array<unsigned char, 16> &input, const std::vector<unsigned char> &key, unsigned Nk);
 
-
-void test_cipher();
-
 void testA1();
 void testA2();
 void testA3();
+
+void testB();
 
 #endif
